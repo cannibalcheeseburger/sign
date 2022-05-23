@@ -1,17 +1,20 @@
 #Import necessary libraries
 from flask import Flask, render_template, Response
-import cv2 as cv
-import csv
+import cv2
+#Initialize the Flask app
 import mediapipe as mp
+import copy
+import csv
 from model import KeyPointClassifier
 from app_files import calc_landmark_list, draw_info_text, draw_landmarks, get_args, pre_process_landmark
 
 
-#Initialize the Flask app
 app = Flask(__name__)
-camera = cv.VideoCapture(0)
+camera = cv2.VideoCapture(0)
+
 mp_hands = mp.solutions.hands
 hands = mp_hands.Hands(
+    static_image_mode=False,
     max_num_hands=1,
 )
 
@@ -23,9 +26,6 @@ with open('model/keypoint_classifier/keypoint_classifier_label.csv', encoding='u
         row[0] for row in keypoint_classifier_labels
     ]
 
-@app.route('/')
-def index():
-    return render_template('index.html')
 
 def gen_frames():  
     while True:
@@ -34,13 +34,25 @@ def gen_frames():
             break
         else:
             frame = get_result(frame)
-            ret, buffer = cv.imencode('.jpg', frame)
+            ret, buffer = cv2.imencode('.jpg', frame)
             frame = buffer.tobytes()
             yield (b'--frame\r\n'
                    b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')  # concat frame one by one and show result
 
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+@app.route('/video_feed')
+def video_feed():
+    return Response(gen_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
+
 def get_result(image):
-    image = cv.cvtColor(image, cv.COLOR_BGR2RGB)
+    image = cv2.flip(image, 1) 
+
+    debug_image = copy.deepcopy(image)
+
+    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
     image.flags.writeable = False
     results = hands.process(image)
@@ -60,11 +72,7 @@ def get_result(image):
                 handedness,
                 keypoint_classifier_labels[hand_sign_id])
 
-
-
-@app.route('/video_feed')
-def video_feed():
-    return Response(gen_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
+    return debug_image
 
 if __name__ == "__main__":
     app.run(debug=True)
